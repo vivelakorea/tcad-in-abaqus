@@ -1,4 +1,7 @@
-# TCAD in Abaqus
+# TCAD in Abaqus — Semiconductor Device Simulation with User Elements
+
+**Abaqus 사용자 요소(UEL)로 구현한 반도체 소자 시뮬레이션(TCAD): pn 다이오드와 3D
+MOSFET의 드리프트-확산(drift–diffusion) 해석.**
 
 Semiconductor device simulation (drift–diffusion TCAD) implemented as **Abaqus user
 elements (UEL)** — the structural FE solver becomes a device simulator. Nodal degrees of
@@ -70,6 +73,16 @@ asserts the physics checks — if it prints `check passed`, everything reproduce
 - H. C. Pao, C. T. Sah, *Effects of diffusion current on characteristics of
   metal-oxide (insulator)-semiconductor transistors*, Solid-State Electron. 9 (1966) 927.
 - J. R. Brews, *A charge-sheet model of the MOSFET*, Solid-State Electron. 21 (1978) 345.
+
+## Author
+
+**심규장 (Gyu-Jang Sim)** · [github.com/vivelakorea](https://github.com/vivelakorea) · gyujang95@gmail.com
+
+Formulation, Fortran UELs, Python reference solvers, and verification in this
+repository are by the author. Background: computational solid mechanics
+(crystal-plasticity FEM, UMAT/VUMAT development for anisotropic yield and
+distortional hardening models) — this project applies the same FE machinery,
+Newton solvers, and consistent-linearization discipline to semiconductor devices.
 
 ## License
 
