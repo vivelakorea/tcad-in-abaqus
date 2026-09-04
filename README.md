@@ -10,6 +10,16 @@ discretization is the same edge-based Scharfetter–Gummel box method used by re
 codes (Silvaco, Sentaurus). Everything is verified against classic papers and independent
 Python reference implementations.
 
+## Demo — MOSFET turn-on, live from Abaqus
+
+Gate-voltage sweep 0 → 3 V (V_D = 50 mV) in a single Abaqus job: the inversion
+channel switches on at the surface as V_G crosses threshold (~1.3 V), and the
+UEL drain current traces the Pao–Sah (1966) exact transfer curve point by point.
+
+![MOSFET turn-on demo](docs/demo_turnon.gif)
+
+Reproduce with `python mosfet/make_demo.py`.
+
 ![3D NMOS results](docs/fig_tcad_uel.png)
 
 ## Contents
@@ -76,7 +86,8 @@ asserts the physics checks — if it prints `check passed`, everything reproduce
 
 ## Author
 
-**심규장 (Gyu-Jang Sim)** · [github.com/vivelakorea](https://github.com/vivelakorea) · gyujang95@gmail.com
+**심규장 (Gyu-Jang Sim)** — 서울대학교 재료역학연구실 ([MAMEL](https://mamel.snu.ac.kr), Seoul National University)
+[github.com/vivelakorea](https://github.com/vivelakorea) · gyujang95@gmail.com
 
 Formulation, Fortran UELs, Python reference solvers, and verification in this
 repository are by the author. Background: computational solid mechanics
