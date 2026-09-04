@@ -31,7 +31,7 @@ Reproduce with `python mosfet/make_demo.py`.
 | `mosfet/` (electro-thermal) | same NMOS with **self-heating**: lattice temperature as a 4th nodal dof, steady-state heat equation with edge-lumped Joule heating, V_T(T) and µ(T) feedback (a minimal Wachutka 1990 thermodynamic model) | **monolithic** (ψ, φₙ, φₚ, ΔT) Newton — one unsymmetric 4×4-block Jacobian, not the usual staggered TCAD↔thermal loop | energy balance (heatsink reaction heat = ΣI·V, Tellegen) to 0.01 %; isothermal limit reproduces Pao–Sah; I_D–V_D droop with negative output conductance |
 | `mosfet/` (electro-thermo-mechanical) | + small-strain **thermoelasticity** (trilinear hex, 2×2×2 Gauss, σ = C:(ε − αΔT·I)) and **piezoresistive** mobility feedback from the element stress (Smith 1954 n-Si coefficients) | **7-dof monolithic** (ψ, φₙ, φₚ, ΔT, uₓ, u_y, u_z) — displacements ride Abaqus dof slots 5–7 (UR2/UR3/WARP) | uniform-ΔT free expansion vs closed form (0.08 %); longitudinal/transverse ±100 MPa vs Smith's π₁₁ and π₁₂ (−10.13 vs −10.22 %, +5.32 vs +5.34 %); energy balance 0.01 %; thermal-stress droop on top of self-heating |
 | `mosfet/run_resistor.py` | uniform n⁺ bar resistor on the same 7-dof element — the element-level answer key | every field has a closed form | R vs L/(q n µ A) (0.30 %); parabolic Joule self-heating profile ΔT_max = PL/8κA (0.02 %, shape ratio 0.7498 vs 0.75); energy balance 0.00 % |
-| `emig/` | metal-line **electromigration** (Korhonen vacancy/stress model): ohmic V + EM stress σ, blocked ends, electron-wind drive, backward-Euler transient | 1D 2-node (V, σ) monolithic UEL | Korhonen (1993) √t growth law (63.9 vs 64.0 MPa, ratio 1.417 vs √2); steady Blech–Herring back-stress Δσ = eZ*ρjL/Ω to 0.00 %; Blech (1976) critical product (jL)_c |
+| `emig/` | metal-line **electromigration** (Korhonen vacancy/stress model): ohmic V + EM stress σ, blocked ends, electron-wind drive, backward-Euler transient | 1D 2-node (V, σ) monolithic UEL | node-wise reproduction of Korhonen's (1993) published finite-line solution across κt/L² = 0.01–0.5 (worst 1.09 %); steady Blech–Herring back-stress Δσ = eZ*ρjL/Ω to 0.00 %; Blech (1976) critical product (jL)_c |
 
 ### MOSFET drain current: 3D UEL vs. the papers
 
@@ -151,13 +151,17 @@ drive, blocked line ends, backward-Euler in time (σ_old recovered from U − Δ
 state variables needed). Al parameters at accelerated-test temperature
 (ρ = 4.9 µΩ·cm, Z* = 4, Ω = 1.66×10⁻²³ cm³, κ = 1.8×10⁻⁹ cm²/s).
 
-![Electromigration back-stress simulation in Abaqus: Korhonen model transient profiles evolving to the linear Blech-Herring steady state](docs/fig_emig.png)
+![Electromigration stress evolution computed in Abaqus lying on top of the published Korhonen 1993 solution at every time](docs/fig_emig.png)
 
-Verification against the literature (`python emig/run_emig.py`):
+Verification is a direct reproduction of the published results (`python emig/run_emig.py`):
+the finite-line stress-evolution solution that Korhonen et al. *published* (the source of
+their figures) is re-implemented independently in `emig/reference_korhonen.py` — the same
+treatment Pao–Sah gets on the MOSFET side — and the UEL is compared against it node by
+node across the whole evolution:
 
 | check | result | reference |
 |---|---|---|
-| transient √t growth at blocked ends | σ(5000 s) = 63.9 vs 64.0 MPa; σ(5000)/σ(2500) = 1.417 vs √2 | Korhonen et al., J. Appl. Phys. 73 (1993) 3790: σ = (eZ*ρj/Ω)·√(4κt/π) |
+| stress profiles at κt/L² = 0.01, 0.055, 0.1, 0.3, 0.5 | worst node-wise deviation 1.09 % of σ_ss (0.16 % at the earliest time) | Korhonen et al., J. Appl. Phys. 73 (1993) 3790, finite blocked line — the paper's published solution |
 | steady-state back-stress | Δσ = 378.3 MPa vs eZ*ρjL/Ω = 378.3 MPa, linearity residual 0.00 % | Blech–Herring back-stress; tension at cathode, compression at anode |
 | critical product | test jL = 2000 A/cm > (jL)_c ≈ 1260 A/cm → EM proceeds; (jL)_c maps to a 119 MPa back-stress ceiling | Blech, J. Appl. Phys. 47 (1976) 1203 (measured Al critical product) |
 

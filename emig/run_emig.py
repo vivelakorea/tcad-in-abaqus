@@ -4,13 +4,14 @@
 Al 배선 (L=200um, A=1x0.5um^2, j=1e5 A/cm^2, ~500K 가속시험 물성),
 양끝 원자 플럭스 차단(blocked), (V, sigma) monolithic + backward Euler.
 
-문헌 수치 검증:
-1. 과도: sigma(끝단, t) = G*sqrt(4 kappa t / pi), G = e Z* rho j / Omega
-   -- Korhonen et al., J. Appl. Phys. 73 (1993) 3790 닫힌형. sqrt(t) 법칙.
-2. 정상상태: 선형 back-stress 프로파일, delta_sigma = e Z* rho j L / Omega
-   (Blech-Herring back stress). 캐소드 인장 / 애노드 압축.
-3. Blech (1976) 임계곱: (jL)_c ~ 1260 A/cm 실측(Al). 본 파라미터로 환산한
-   임계 back-stress를 출력해 대조 (jL 이하면 EM 정지 = Blech effect).
+검증 = 논문 결과 재현:
+1. Korhonen et al., J. Appl. Phys. 73 (1993) 3790 이 발표한 유한 배선
+   응력 전개 해(그 논문 그림들의 원천, reference_korhonen.py 독립 구현)를
+   kappa*t/L^2 = 0.01 ~ 0.5 및 정상상태에서 절점별 프로파일 대조.
+2. 정상상태 Blech-Herring back-stress: delta_sigma = e Z* rho j L / Omega,
+   선형 프로파일 (캐소드 인장 / 애노드 압축).
+3. Blech, J. Appl. Phys. 47 (1976) 1203 실측 임계곱 (jL)_c ~ 1260 A/cm 를
+   본 파라미터의 back-stress 스케일로 환산 대조.
 
 사용: python run_emig.py   (Abaqus job 1개, ~1 min)
 """
@@ -20,6 +21,8 @@ import re
 import subprocess
 
 import numpy as np
+
+import reference_korhonen as ref
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 RUN = os.path.join(HERE, 'abq_run')
@@ -32,7 +35,7 @@ AR = 1.0e-4*0.5e-4                           # cm^2
 J = 1.0e5                                    # A/cm^2
 VAPP = J*RHO*LX                              # V
 NEL = 80
-T1, T2 = 2500.0, 5000.0                      # 과도 체크 시각 [s]
+TAU = LX*LX/XKAP                             # 확산 시간 L^2/kappa [s]
 
 
 def write_inp(job):
@@ -50,12 +53,18 @@ def write_inp(job):
           '0., 1., 1e9, 1.']
     bc = ['*BOUNDARY, AMPLITUDE=INST',
           f'NA, 1, 1, {VAPP:.8e}', 'NC, 1, 1, 0.']
-    ninc1 = int(T2/50)
-    L += ['*STEP, INC=400, UNSYMM=YES', '*STATIC',
-          f'50., {T2:.1f}, 1., 50.'] + bc
-    L += [f'*NODE PRINT, NSET=NALL, FREQUENCY={ninc1//2}', 'U', '*END STEP']
-    L += ['*STEP, INC=400, UNSYMM=YES', '*STATIC',
-          '1e5, 2e6, 1e3, 1e5'] + bc + ['*END STEP']
+
+    def step(dt, period, freq):
+        return (['*STEP, INC=400, UNSYMM=YES', '*STATIC',
+                 f'{dt:.6e}, {period:.6e}, {dt*0.99:.6e}, {dt:.6e}'] + bc
+                + [f'*NODE PRINT, NSET=NALL, FREQUENCY={freq}', 'U',
+                   '*END STEP'])
+
+    # 논문 그림의 시각축: kappa*t/L^2 = 0.01 / 0.055 / 0.1 / 0.3 / 0.5 / 정상
+    L += step(5e-4*TAU, 0.01*TAU, 999)               # -> 0.01 tau
+    L += step(5e-3*TAU, 0.09*TAU, 9)                 # -> 0.055, 0.1 tau
+    L += step(2.5e-2*TAU, 0.4*TAU, 8)                # -> 0.3, 0.5 tau
+    L += step(0.45*TAU, 9.0*TAU, 999)                # -> ~9.5 tau (정상)
     io.open(os.path.join(RUN, job + '.inp'), 'w').write('\n'.join(L) + '\n')
     return xs
 
@@ -90,48 +99,53 @@ def main():
                        text=True, errors='replace')
     assert 'COMPLETED' in r.stdout, r.stdout[-600:]
     ev = parse(job, NEL + 1)
-    assert len(ev) == 3, f'{len(ev)} print blocks'
+    tlist = [0.01, 0.055, 0.1, 0.3, 0.5]             # [tau]
+    assert len(ev) == len(tlist) + 1, f'{len(ev)} print blocks'
 
     G = CEZ*VAPP/LX                                  # MPa/cm
-    # 1. 과도 sqrt(t): 캐소드 끝 인장
-    s1, s2 = ev[0][-1, 1], ev[1][-1, 1]
-    th1 = G*np.sqrt(4*XKAP*T1/np.pi)
-    th2 = G*np.sqrt(4*XKAP*T2/np.pi)
-    print(f'[sqrt(t)] sigma_c({T1:.0f}s) = {s1:.1f} MPa (닫힌형 {th1:.1f}), '
-          f'sigma_c({T2:.0f}s) = {s2:.1f} MPa (닫힌형 {th2:.1f})')
-    print(f'          비율 {s2/s1:.4f} vs sqrt(2) = {np.sqrt(2):.4f}')
-    # 2. 정상상태 선형 back-stress
-    prof = ev[2][:, 1]
+    sig_ss = G*LX/2                                  # 캐소드 정상 back-stress
+    # 1. Korhonen (1993) 유한 배선 해와 프로파일 대조
+    print(' kappa*t/L^2   max|UEL - Korhonen1993| / sig_ss')
+    worst = 0.0
+    for d, tn in zip(ev[:-1], tlist):
+        th = ref.sigma(xs, tn*TAU, LX, XKAP, G)
+        dev = np.abs(d[:, 1] - th).max()/sig_ss
+        worst = max(worst, dev)
+        print(f'   {tn:5.3f}        {dev*100:.2f}%')
+    print(f'worst profile dev vs Korhonen(1993) = {worst*100:.2f}%')
+    # 2. 정상상태 Blech-Herring
+    prof = ev[-1][:, 1]
     dsig = prof[-1] - prof[0]
     dsig_th = CEZ*VAPP                               # = e Z* rho j L / Omega
     lin = np.polyfit(xs, prof, 1)
     resid = np.abs(prof - np.polyval(lin, xs)).max()/abs(dsig)
-    print(f'[정상상태] delta_sigma = {dsig:.1f} MPa, eZ*rho*j*L/Omega = '
-          f'{dsig_th:.1f} MPa; 선형성 잔차 {resid*100:.2f}%')
-    print(f'          캐소드 {prof[-1]:+.1f} MPa (인장), '
-          f'애노드 {prof[0]:+.1f} MPa (압축)')
+    print(f'[정상상태] delta_sigma = {dsig:.1f} MPa vs eZ*rho*j*L/Omega = '
+          f'{dsig_th:.1f} MPa; 선형성 잔차 {resid*100:.2f}%; '
+          f'캐소드 {prof[-1]:+.1f} / 애노드 {prof[0]:+.1f} MPa')
     # 3. Blech (1976)
-    jl = J*LX
-    jlc = 1260.0                                     # A/cm, Blech 실측(Al)
-    sig_c = CEZ*RHO*jlc/2*1                          # (jL)_c 의 최대 back-stress
-    print(f'[Blech] 본 시험 jL = {jl:.0f} A/cm (> (jL)_c ~ {jlc:.0f}: EM 진행).'
-          f' (jL)_c 환산 임계 back-stress = {sig_c:.0f} MPa'
-          f' (void 핵생성 문턱 O(100 MPa) 문헌과 정합)')
+    jl, jlc = J*LX, 1260.0
+    sig_c = CEZ*RHO*jlc/2
+    print(f'[Blech] jL = {jl:.0f} A/cm (> (jL)_c ~ {jlc:.0f}: EM 진행); '
+          f'(jL)_c 환산 임계 back-stress = {sig_c:.0f} MPa')
 
-    # 그림
+    # 그림: 논문 해(점선) 위에 UEL(실선) 겹치기
     import matplotlib
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
-    fig, ax = plt.subplots(figsize=(6.2, 3.8))
+    fig, ax = plt.subplots(figsize=(6.6, 4.0))
     xu = xs*1e4
-    for d, t, c in ((ev[0], T1, 'tab:blue'), (ev[1], T2, 'tab:orange')):
-        ax.plot(xu, d[:, 1], '-', color=c, label=f't = {t:.0f} s')
-    ax.plot(xu, prof, '-', color='crimson', label='steady state')
-    ax.plot(xu, prof[0] + (dsig_th/LX)*xs, 'k--', lw=1,
-            label='$eZ^*\\rho jL/\\Omega$ (Blech-Herring)')
+    cmap = plt.get_cmap('viridis')
+    for k, (d, tn) in enumerate(zip(ev[:-1], tlist)):
+        c = cmap(k/(len(tlist)))
+        ax.plot(xu, d[:, 1], '-', color=c, lw=1.8,
+                label=f'$\\kappa t/L^2$ = {tn:g}')
+        ax.plot(xu, ref.sigma(xs, tn*TAU, LX, XKAP, G), 'k--', lw=0.9)
+    ax.plot(xu, prof, '-', color='crimson', lw=1.8, label='steady state')
+    ax.plot(xu, G*(xs - LX/2), 'k--', lw=0.9,
+            label='Korhonen (1993) solution')
     ax.set_xlabel('x [$\\mu$m] (anode $\\to$ cathode)')
     ax.set_ylabel('$\\sigma$ [MPa]')
-    ax.set_title('Electromigration back-stress (Korhonen model UEL)')
+    ax.set_title('EM stress evolution: UEL vs Korhonen (1993)')
     ax.legend(fontsize=8)
     ax.grid(alpha=0.3)
     fig.tight_layout()
@@ -140,11 +154,11 @@ def main():
     fig.savefig(out + '.pdf')
     print('figure ->', os.path.abspath(out) + '.png')
 
-    assert abs(s2/th2 - 1) < 0.10                    # Korhonen sqrt(t)
-    assert abs(s2/s1 - np.sqrt(2)) < 0.07
-    assert abs(dsig/dsig_th - 1) < 0.01              # Blech-Herring 선형
+    assert worst < 0.02                              # Korhonen 1993 전 구간
+    assert abs(dsig/dsig_th - 1) < 0.01              # Blech-Herring
     assert resid < 0.01
-    print('check passed: EM UEL — Korhonen sqrt(t) / 정상 back-stress / Blech.')
+    print('check passed: EM UEL — Korhonen(1993) 프로파일 전개 / '
+          'Blech-Herring / Blech(1976).')
 
 
 if __name__ == '__main__':
