@@ -1,11 +1,10 @@
-C uel_mos_et.f --- 3D NMOS self-heating monolithic UEL (TCAD in Abaqus).
-C uel_mos.f 에 격자온도를 4번째 절점 자유도로 얹은 (psi,phi_n,phi_p,dT)
-C monolithic Newton. dT = T - 300K 상승분 [K] -> 초기값 0, 히트싱크 BC dT=0.
-C 열: 정상상태 box method, -k lap(T) = q_J. 모서리 Joule (Jn+Jp)*dpsi 를
-C 양 절점에 반절씩 lumping. 피드백: SG 플럭스의 t = dpsi*T0/T (V_T(T)),
-C mu(T) = mu300*(T/300)^-1.5. Wachutka, IEEE TCAD 9 (1990) 1141 의 축소판.
-C HSCALE=0, dT=0 이면 uel_mos.f 와 완전히 동일한 방정식으로 환원(약결합 극한).
-C 단위: 길이 cm, 퍼텐셜 V_T(300K), 농도 n_i, 온도 K, 열 W.
+C uel_mos_et_stag.f --- staggered형(분할반복) 비교용 변형판.
+C uel_mos_et.f 와 잔차(물리)는 완전히 동일하고, Jacobian 의 전기<->열
+C 교차 블록만 제거: DJNTH/DJPTH(전기행의 T열), DPJ1~7(T행의 전기열 +
+C Joule 의 T-대각). 즉 각 Newton 반복이 "전기 풀고 열 풀기"를 한 번에
+C 하는 block-Jacobi 분할반복이 된다 -- staggered TCAD<->열 루프의
+C 수렴 특성(선형 수렴, 강결합 발산)을 같은 코드베이스에서 재현.
+C run_staggered.py 가 HSCALE 을 올리며 monolithic 과 반복수/수렴 비교.
 C PROPS: (1) 0=산화막/1=실리콘, (2) net doping / ni, (3) 발열 배율 HSCALE
       SUBROUTINE UEL(RHS,AMATRX,SVARS,ENERGY,NDOFEL,NRHS,NSVARS,
      1 PROPS,NPROPS,COORDS,MCRD,NNODE,U,DU,V,A,JTYPE,TIME,DTIME,
@@ -152,10 +151,9 @@ C       dXJP
 C       dT 사슬: dt/dT_node = -0.5 t/TK, dmu-인자 -> -0.75 XJ/TK.
 C       Newton 과도상태(플럭스 폭주, 수렴값 ~1e3)에서는 T열 결합을 끊어
 C       T피벗(g_T~1e-3) 소거 폭발/NaN 방지. 해 근방 비활성 -> 일관성 유지.
-        FTH = 1.D0
-        IF (DMAX1(DABS(XJN), DABS(XJP)) .GT. 1.D7) FTH = 0.D0
-        DJNTH = FTH*(-0.5D0*TT/TK*DJNT - 0.75D0*XJN/TK)
-        DJPTH = FTH*(-0.5D0*TT/TK*DJPT - 0.75D0*XJP/TK)
+C       [staggered] 전기행의 T열 결합 제거
+        DJNTH = 0.D0
+        DJPTH = 0.D0
 C       n 행 (row a = -XJN, row b = +XJN)
         AMATRX(KA+1,KA)   = AMATRX(KA+1,KA)   - DJNPA
         AMATRX(KA+1,KB)   = AMATRX(KA+1,KB)   - DJNPB
@@ -193,14 +191,14 @@ C       (물리 최대 모서리 Joule ~1e-3 W -> 해 근방 비활성, 일관�
         END IF
         RHS(KA+3,1) = RHS(KA+3,1) + 0.5D0*PJ
         RHS(KB+3,1) = RHS(KB+3,1) + 0.5D0*PJ
-C       dPJ (T행의 8개 열 선형화 -- 본 작업)
-        DPJ1 = FCLMP*HS*((DJPPA - DJNPA)*DPS - (XJP - XJN))
-        DPJ2 = FCLMP*HS*((DJPPB - DJNPB)*DPS + (XJP - XJN))
-        DPJ3 = -FCLMP*HS*DJNFA*DPS
-        DPJ4 = -FCLMP*HS*DJNFB*DPS
-        DPJ5 = FCLMP*HS*DJPFA*DPS
-        DPJ6 = FCLMP*HS*DJPFB*DPS
-        DPJ7 = FCLMP*HS*(DJPTH - DJNTH)*DPS
+C       [staggered] T행의 전기열/Joule-대각 결합 제거 (열은 소스 동결)
+        DPJ1 = 0.D0
+        DPJ2 = 0.D0
+        DPJ3 = 0.D0
+        DPJ4 = 0.D0
+        DPJ5 = 0.D0
+        DPJ6 = 0.D0
+        DPJ7 = 0.D0
         AMATRX(KA+3,KA)   = AMATRX(KA+3,KA)   - 0.5D0*DPJ1
         AMATRX(KA+3,KB)   = AMATRX(KA+3,KB)   - 0.5D0*DPJ2
         AMATRX(KA+3,KA+1) = AMATRX(KA+3,KA+1) - 0.5D0*DPJ3

@@ -83,6 +83,34 @@ Verification (no closed form exists for the coupled problem):
 
 Reproduce with `python mosfet/run_selfheating.py` (two Abaqus jobs, heating on/off).
 
+### Monolithic vs. staggered: why the cross-Jacobian matters
+
+`mosfet/run_staggered.py` re-runs the same problem with a variant element
+(`uel_mos_et_stag.f`) that keeps the residual — hence the physics and the converged
+solution — bit-identical, but deletes the electro↔thermal cross blocks from the
+Jacobian. Each Abaqus Newton iteration then acts as one pass of an *un-relaxed*
+staggered (block-Jacobi) scheme, i.e. exactly what a TCAD↔thermal-FE co-simulation
+loop does per outer iteration:
+
+| HSCALE (coupling) | monolithic | staggered-type |
+|---|---|---|
+| 5 | 8/8 steps, 339 iterations | diverges in the first heated step |
+| 50 | 8/8, 350 | diverges |
+| 200 | 8/8, 358 | diverges |
+| 800 | 8/8, 363 | diverges |
+
+The monolithic cost is essentially flat in coupling strength, while the partitioned
+iteration fails at *every* tested strength — with an identical divergence signature
+(a sign-alternating φₙ residual growing ~180× per iteration). The reason it does not
+even survive weak heating: the electrical residual's temperature sensitivity scales
+with the *current* (µ(T), V_T(T)), not with ΔT, and the weakly conducting thermal
+network (κA/h down to 10⁻⁸ W/K across the thin surface layers) amplifies each stale
+Joule update into a large temperature swing, so the partitioned loop gain exceeds
+unity long before the temperature rise is even measurable. Production staggered
+co-simulations survive this with under-relaxation and loose outer tolerances; inside
+a tight Newton framework, the cross-derivative blocks are what make convergence
+possible at all.
+
 ## Electro-thermo-mechanical: the full three-field loop
 
 `mosfet/uel_mos_etm.f` extends the element to **seven nodal dofs**
@@ -151,6 +179,7 @@ python run_mosfet.py         # ~3 min: full bias sweep in one job (6 steps), fig
 python run_selfheating.py    # ~4 min: electro-thermal, 2 jobs (HSCALE 0/200), figure + checks
 python run_etm.py            # ~7 min: electro-thermo-mechanical, 4 jobs, figure + checks
 python run_resistor.py       # ~1 min: element answer key (R, parabolic dT, energy)
+python run_staggered.py      # ~25 min: monolithic vs staggered-type, 8 jobs
 
 cd emig
 python run_emig.py           # ~1 min: electromigration vs Korhonen/Blech, figure + checks
