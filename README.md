@@ -28,6 +28,7 @@ Reproduce with `python mosfet/make_demo.py`.
 |---|---|---|---|
 | `diode/` | 1D pn junction, drift–diffusion (ψ, n, p) | 2-node element, Scharfetter–Gummel (1969) exponential-fitting flux, analytic unsymmetric Jacobian | node-wise 5×10⁻⁸ agreement with an independent Python solver; built-in potential, mass-action law, current conservation |
 | `mosfet/` | 3D long-channel NMOS (6×0.5×2 µm, n⁺ 10¹⁹ S/D, p-substrate 10¹⁷, 10 nm oxide, L = 4 µm) | 8-node hex box-method element with SG fluxes on all 12 edges, quasi-Fermi variables (ψ, φₙ, φₚ) | drain current vs. Pao–Sah (1966) exact double integral and Brews (1978) charge-sheet model |
+| `mosfet/` (electro-thermal) | same NMOS with **self-heating**: lattice temperature as a 4th nodal dof, steady-state heat equation with edge-lumped Joule heating, V_T(T) and µ(T) feedback (a minimal Wachutka 1990 thermodynamic model) | **monolithic** (ψ, φₙ, φₚ, ΔT) Newton — one unsymmetric 4×4-block Jacobian, not the usual staggered TCAD↔thermal loop | energy balance (heatsink reaction heat = ΣI·V, Tellegen) to 0.01 %; isothermal limit reproduces Pao–Sah; I_D–V_D droop with negative output conductance |
 
 ### MOSFET drain current: 3D UEL vs. the papers
 
@@ -42,6 +43,43 @@ The largest deviation sits at the saturation knee (V_G − V_T0 ≈ 0.7 V), exac
 gradual-channel assumption behind Pao–Sah starts to strain — the 2D device solution does
 not make that assumption, so diverging there is correct behavior, not error.
 
+## Self-heating MOSFET: monolithic electro-thermal UEL
+
+Lattice temperature rise ΔT is added as a **4th nodal degree of freedom** and solved in
+the *same* Newton matrix as the device equations — (ψ, φₙ, φₚ, ΔT) fully coupled. This
+is the differentiator: published electro-thermal device studies overwhelmingly couple a
+TCAD solver to a thermal FE solver in a staggered loop; here the whole thing is one
+unsymmetric Jacobian inside Abaqus. The heat equation is discretized with the same
+box method (edge conductances κA/h), the Joule source J·E is lumped edge-wise from the
+SG fluxes, and temperature feeds back through V_T(T) = k_BT/q in the SG exponent and
+µ(T) ∝ (T/300)⁻³ᐟ².
+
+![Monolithic electro-thermal MOSFET simulation in Abaqus: drain current droop from self-heating and lattice temperature hotspot at the drain end of the channel](docs/fig_selfheating.png)
+
+V_G = 3 V, substrate bottom held at 300 K, all other surfaces adiabatic. The device is a
+0.5 µm-wide toy, so the physical dissipation (~µW) gives mK heating; a heat multiplier
+HSCALE = 200 emulates a multi-finger power layout (equivalent to scaling κ down) to make
+the classic signatures visible:
+
+| V_D [V] | I_D isothermal [µA] | I_D self-heating [µA] | ΔT_max [K] | energy balance err |
+|---|---|---|---|---|
+| 0.5 | 10.5 | 10.0 | 5.8 | 0.00 % |
+| 1.5 | 17.9 | 15.0 | 37.7 | 0.01 % |
+| 3.0 | 18.4 | 14.0 | 118.9 | 0.00 % |
+
+Verification (no closed form exists for the coupled problem):
+- **Energy balance / Tellegen**: total heat flowing out through the heatsink (reaction
+  "moment" of the ΔT dof at the Dirichlet nodes) equals HSCALE·I_D·V_D to 0.01 % — the
+  discrete Joule sum over edges telescopes exactly to the terminal power.
+- **Weak-coupling limit**: with HSCALE = 0 the element reduces to the isothermal UEL
+  equation-for-equation; I_D matches Pao–Sah within 3.7 % (V_D ≤ 1 V, where the
+  gradual-channel assumption holds) and ΔT ≡ 0 to machine precision.
+- **Self-heating signature**: 23 % I_D droop at V_D = 3 V with *negative* output
+  conductance beyond V_D ≈ 1.5 V, and the temperature hotspot sits at the drain end of
+  the channel — the textbook qualitative picture.
+
+Reproduce with `python mosfet/run_selfheating.py` (two Abaqus jobs, heating on/off).
+
 ## How to run
 
 Requires Abaqus (tested with 2024) with a linked Fortran compiler, plus Python 3 with
@@ -52,7 +90,8 @@ cd diode
 python run_diode.py     # ~1 min: writes inp, runs abaqus job=... user=uel_dd.f, checks
 
 cd mosfet
-python run_mosfet.py    # ~3 min: full bias sweep in one job (6 steps), figure + checks
+python run_mosfet.py         # ~3 min: full bias sweep in one job (6 steps), figure + checks
+python run_selfheating.py    # ~4 min: electro-thermal, 2 jobs (HSCALE 0/200), figure + checks
 ```
 
 Each driver generates the mesh/inp, launches Abaqus, parses the `.dat` output, and
@@ -75,6 +114,14 @@ asserts the physics checks — if it prints `check passed`, everything reproduce
   conservative.
 - The coupled Jacobian is unsymmetric — `UNSYMM` on the `*USER ELEMENT` line and
   `UNSYMM=YES` on every step, or convergence quietly degrades.
+- **NaN passes every convergence check.** Coupling the weakly-conducting temperature
+  equation to exponentials is a trap: during Newton excursions the SG fluxes ride the
+  exp-clamp (~e⁸⁰), an unguarded Joule source kicks ΔT to 10¹⁸ K, the residual overflows
+  — and Abaqus reports the step *converged*, because every comparison against NaN is
+  false. It then sails through all steps in one iteration each and writes a `.dat` full
+  of NaN with zero error messages. Guards: clamp the per-edge Joule power and drop the
+  thermal-coupling Jacobian entries while fluxes are unphysical (both inactive at the
+  converged solution, so consistency is preserved where it matters).
 
 ## FAQ
 
@@ -119,6 +166,8 @@ Scharfetter–Gummel box method 이산화, 준페르미 퍼텐셜 변수, 완전
 - H. C. Pao, C. T. Sah, *Effects of diffusion current on characteristics of
   metal-oxide (insulator)-semiconductor transistors*, Solid-State Electron. 9 (1966) 927.
 - J. R. Brews, *A charge-sheet model of the MOSFET*, Solid-State Electron. 21 (1978) 345.
+- G. K. Wachutka, *Rigorous thermodynamic treatment of heat generation and conduction in
+  semiconductor device modeling*, IEEE Trans. CAD 9 (1990) 1141.
 
 ## Author
 
