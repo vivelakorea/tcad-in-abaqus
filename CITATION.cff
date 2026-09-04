@@ -1,0 +1,18 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+type: software
+title: "TCAD in Abaqus: semiconductor device simulation with user elements"
+authors:
+  - family-names: "Sim"
+    given-names: "Gyu-Jang"
+    affiliation: "Seoul National University"
+repository-code: "https://github.com/vivelakorea/tcad-in-abaqus"
+license: MIT
+keywords:
+  - TCAD
+  - semiconductor device simulation
+  - drift-diffusion
+  - Abaqus
+  - UEL
+  - MOSFET
+  - Scharfetter-Gummel

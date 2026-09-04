@@ -16,11 +16,11 @@ Gate-voltage sweep 0 → 3 V (V_D = 50 mV) in a single Abaqus job: the inversion
 channel switches on at the surface as V_G crosses threshold (~1.3 V), and the
 UEL drain current traces the Pao–Sah (1966) exact transfer curve point by point.
 
-![MOSFET turn-on demo](docs/demo_turnon.gif)
+![Abaqus UEL MOSFET simulation: inversion channel forming during gate voltage sweep, drain current following the Pao-Sah transfer curve](docs/demo_turnon.gif)
 
 Reproduce with `python mosfet/make_demo.py`.
 
-![3D NMOS results](docs/fig_tcad_uel.png)
+![3D NMOS TCAD simulation in Abaqus: doping map, electrostatic potential, electron inversion channel, drain current vs Pao-Sah and Brews models](docs/fig_tcad_uel.png)
 
 ## Contents
 
@@ -75,6 +75,42 @@ asserts the physics checks — if it prints `check passed`, everything reproduce
   conservative.
 - The coupled Jacobian is unsymmetric — `UNSYMM` on the `*USER ELEMENT` line and
   `UNSYMM=YES` on every step, or convergence quietly degrades.
+
+## FAQ
+
+**Can Abaqus simulate semiconductor devices?**
+Yes — a `*USER ELEMENT` is just "residual + Jacobian per element", and nothing forces
+the degrees of freedom to be displacements. Here they are electrostatic potential and
+quasi-Fermi potentials, the residuals are Poisson + electron/hole continuity, and
+Abaqus's Newton loop, unsymmetric solver, and load stepping do the rest.
+
+**How is the drift–diffusion equation discretized?**
+With the Scharfetter–Gummel (1969) exponential-fitting flux on every mesh edge — the
+same box-integration scheme used by commercial TCAD tools. It reduces to central
+differencing for pure diffusion, becomes upwind automatically under strong drift, and
+gives exactly zero flux at equilibrium.
+
+**Why quasi-Fermi variables instead of carrier densities?**
+With (ψ, n, p) at realistic doping (n/nᵢ ~ 10⁹) the coupled Newton diverges from any
+cold start. With (ψ, φₙ, φₚ) every unknown is a bounded voltage, contacts become plain
+voltage boundary conditions, and the same problem converges with ordinary ramping.
+
+**Is this a full TCAD replacement?**
+No — no recombination models, mobility models, or impact ionization; constant mobility
+and Boltzmann statistics only. It is a transparent, verified reference implementation
+of the numerical core: discretization, linearization, and solver.
+
+## 한국어 소개
+
+반도체 소자 시뮬레이션(TCAD)의 수치 코어 — 포아송 방정식과 전자/정공 연속
+방정식의 드리프트-확산(drift–diffusion) 모델 — 를 구조해석 코드 Abaqus의 사용자
+요소(UEL)로 구현한 프로젝트입니다. 상용 TCAD(Sentaurus, Silvaco Atlas)와 같은
+Scharfetter–Gummel box method 이산화, 준페르미 퍼텐셜 변수, 완전 연성 Newton
+풀이를 사용하며, 1D pn 접합 다이오드(내장전위·질량작용법칙·전류보존 검증)와
+3D 긴채널 NMOS MOSFET(문턱전압, 반전 채널, 전달특성 I_D–V_G)을 Pao–Sah(1966)
+정확해 및 Brews(1978) charge-sheet 모델과 정량 대조해 1–6% 수준으로
+재현합니다. 유한요소 정식화·일관 선형화·사용자 서브루틴(UMAT/UEL) 개발
+경험을 소자 시뮬레이션으로 확장한 작업입니다.
 
 ## References
 
