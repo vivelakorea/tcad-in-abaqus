@@ -29,7 +29,9 @@ Reproduce with `python mosfet/make_demo.py`.
 | `diode/` | 1D pn junction, drift–diffusion (ψ, n, p) | 2-node element, Scharfetter–Gummel (1969) exponential-fitting flux, analytic unsymmetric Jacobian | node-wise 5×10⁻⁸ agreement with an independent Python solver; built-in potential, mass-action law, current conservation |
 | `mosfet/` | 3D long-channel NMOS (6×0.5×2 µm, n⁺ 10¹⁹ S/D, p-substrate 10¹⁷, 10 nm oxide, L = 4 µm) | 8-node hex box-method element with SG fluxes on all 12 edges, quasi-Fermi variables (ψ, φₙ, φₚ) | drain current vs. Pao–Sah (1966) exact double integral and Brews (1978) charge-sheet model |
 | `mosfet/` (electro-thermal) | same NMOS with **self-heating**: lattice temperature as a 4th nodal dof, steady-state heat equation with edge-lumped Joule heating, V_T(T) and µ(T) feedback (a minimal Wachutka 1990 thermodynamic model) | **monolithic** (ψ, φₙ, φₚ, ΔT) Newton — one unsymmetric 4×4-block Jacobian, not the usual staggered TCAD↔thermal loop | energy balance (heatsink reaction heat = ΣI·V, Tellegen) to 0.01 %; isothermal limit reproduces Pao–Sah; I_D–V_D droop with negative output conductance |
-| `mosfet/` (electro-thermo-mechanical) | + small-strain **thermoelasticity** (trilinear hex, 2×2×2 Gauss, σ = C:(ε − αΔT·I)) and **piezoresistive** mobility feedback from the element stress (Smith 1954 n-Si coefficients) | **7-dof monolithic** (ψ, φₙ, φₚ, ΔT, uₓ, u_y, u_z) — displacements ride Abaqus dof slots 5–7 (UR2/UR3/WARP) | uniform-ΔT free expansion vs closed form (0.08 %); uniaxial −100 MPa → ΔI_D/I_D = −10.1 % vs Smith's −π₁₁σ = −10.2 %; energy balance 0.01 %; thermal-stress droop on top of self-heating |
+| `mosfet/` (electro-thermo-mechanical) | + small-strain **thermoelasticity** (trilinear hex, 2×2×2 Gauss, σ = C:(ε − αΔT·I)) and **piezoresistive** mobility feedback from the element stress (Smith 1954 n-Si coefficients) | **7-dof monolithic** (ψ, φₙ, φₚ, ΔT, uₓ, u_y, u_z) — displacements ride Abaqus dof slots 5–7 (UR2/UR3/WARP) | uniform-ΔT free expansion vs closed form (0.08 %); longitudinal/transverse ±100 MPa vs Smith's π₁₁ and π₁₂ (−10.13 vs −10.22 %, +5.32 vs +5.34 %); energy balance 0.01 %; thermal-stress droop on top of self-heating |
+| `mosfet/run_resistor.py` | uniform n⁺ bar resistor on the same 7-dof element — the element-level answer key | every field has a closed form | R vs L/(q n µ A) (0.30 %); parabolic Joule self-heating profile ΔT_max = PL/8κA (0.02 %, shape ratio 0.7498 vs 0.75); energy balance 0.00 % |
+| `emig/` | metal-line **electromigration** (Korhonen vacancy/stress model): ohmic V + EM stress σ, blocked ends, electron-wind drive, backward-Euler transient | 1D 2-node (V, σ) monolithic UEL | Korhonen (1993) √t growth law (63.9 vs 64.0 MPa, ratio 1.417 vs √2); steady Blech–Herring back-stress Δσ = eZ*ρjL/Ω to 0.00 %; Blech (1976) critical product (jL)_c |
 
 ### MOSFET drain current: 3D UEL vs. the papers
 
@@ -101,9 +103,35 @@ Verification (`python mosfet/run_etm.py`, three Abaqus jobs):
 | check | result | reference |
 |---|---|---|
 | uniform ΔT = 100 K free expansion (bottom rollers) | u_z(top) error 0.08 % | closed form u_z = −αΔT·H |
-| uniaxial σₓₓ = −100 MPa via face displacement | ΔI_D/I_D = −10.13 % | Smith (1954): −π₁₁σₓₓ = −10.22 % |
+| longitudinal σₓₓ = −100 MPa via face displacement | ΔI_D/I_D = −10.13 % | Smith (1954): −π₁₁σₓₓ = −10.22 % |
+| transverse σ_yy = −100 MPa | ΔI_D/I_D = +5.32 % | Smith (1954): −π₁₂σ_yy = +5.34 % |
 | full loop, bottom clamped, HSCALE = 200 | energy balance ≤ 0.01 %, ΔT_max 118 K | Tellegen, as above |
 | thermal-stress feedback | I_D(3 V) = 13.99 µA < 14.04 µA (thermal-only) | compressive hotspot lowers µₙ — extra droop on top of self-heating |
+
+`mosfet/run_resistor.py` adds the element-level answer key on a uniform n⁺ bar, where
+*every* field has a closed form: resistance R = L/(q n µₙ A) reproduced to 0.30 %, the
+parabolic Joule-heating temperature profile ΔT_max = PL/8κA to 0.02 % (quarter-point
+shape ratio 0.7498 vs. the exact 0.75), and end-contact heat reactions equal to I·V to
+0.00 %.
+
+## Electromigration: Korhonen model UEL
+
+`emig/uel_em.f` applies the same monolithic recipe to interconnect reliability: a 1D
+2-node element with dofs (V, σ) solving ohmic conduction together with the
+Korhonen stress-evolution equation ∂σ/∂t = ∂/∂x[κ(∂σ/∂x − eZ*ρj/Ω)] — electron-wind
+drive, blocked line ends, backward-Euler in time (σ_old recovered from U − ΔU, no
+state variables needed). Al parameters at accelerated-test temperature
+(ρ = 4.9 µΩ·cm, Z* = 4, Ω = 1.66×10⁻²³ cm³, κ = 1.8×10⁻⁹ cm²/s).
+
+![Electromigration back-stress simulation in Abaqus: Korhonen model transient profiles evolving to the linear Blech-Herring steady state](docs/fig_emig.png)
+
+Verification against the literature (`python emig/run_emig.py`):
+
+| check | result | reference |
+|---|---|---|
+| transient √t growth at blocked ends | σ(5000 s) = 63.9 vs 64.0 MPa; σ(5000)/σ(2500) = 1.417 vs √2 | Korhonen et al., J. Appl. Phys. 73 (1993) 3790: σ = (eZ*ρj/Ω)·√(4κt/π) |
+| steady-state back-stress | Δσ = 378.3 MPa vs eZ*ρjL/Ω = 378.3 MPa, linearity residual 0.00 % | Blech–Herring back-stress; tension at cathode, compression at anode |
+| critical product | test jL = 2000 A/cm > (jL)_c ≈ 1260 A/cm → EM proceeds; (jL)_c maps to a 119 MPa back-stress ceiling | Blech, J. Appl. Phys. 47 (1976) 1203 (measured Al critical product) |
 
 The piezoresistive coupling enters the residual only (its Jacobian columns are
 omitted — a deliberate quasi-Newton shortcut for a ~3 % effect; the V_D continuation
@@ -121,7 +149,11 @@ python run_diode.py     # ~1 min: writes inp, runs abaqus job=... user=uel_dd.f,
 cd mosfet
 python run_mosfet.py         # ~3 min: full bias sweep in one job (6 steps), figure + checks
 python run_selfheating.py    # ~4 min: electro-thermal, 2 jobs (HSCALE 0/200), figure + checks
-python run_etm.py            # ~6 min: electro-thermo-mechanical, 3 jobs, figure + checks
+python run_etm.py            # ~7 min: electro-thermo-mechanical, 4 jobs, figure + checks
+python run_resistor.py       # ~1 min: element answer key (R, parabolic dT, energy)
+
+cd emig
+python run_emig.py           # ~1 min: electromigration vs Korhonen/Blech, figure + checks
 ```
 
 Each driver generates the mesh/inp, launches Abaqus, parses the `.dat` output, and
@@ -200,6 +232,10 @@ Scharfetter–Gummel box method 이산화, 준페르미 퍼텐셜 변수, 완전
   semiconductor device modeling*, IEEE Trans. CAD 9 (1990) 1141.
 - C. S. Smith, *Piezoresistance effect in germanium and silicon*, Phys. Rev. 94
   (1954) 42.
+- M. A. Korhonen, P. Børgesen, K. N. Tu, C.-Y. Li, *Stress evolution due to
+  electromigration in confined metal lines*, J. Appl. Phys. 73 (1993) 3790.
+- I. A. Blech, *Electromigration in thin aluminum films on titanium nitride*,
+  J. Appl. Phys. 47 (1976) 1203.
 
 ## Author
 

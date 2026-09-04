@@ -29,7 +29,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 RUN = os.path.join(HERE, 'abq_run')
 VG = 3.0
 HSCALE = 200.0
-ALSI, EYSI, P11 = 2.6e-6, 1.30e11, -102.2e-11
+ALSI, EYSI = 2.6e-6, 1.30e11
+P11, P12 = -102.2e-11, 53.4e-11              # Smith (1954) n-Si [1/Pa]
 DT0 = 100.0                                  # 팽창 테스트 dT [K]
 EPS0 = -1.0e8 / EYSI                         # 압저항 테스트: sxx=-100MPa
 
@@ -87,7 +88,7 @@ def write_inp(job, hscale, steps, mech_bc):
           f'*UEL PROPERTY, ELSET=EPSUB',
           f'1, {-NA_SUB/NI:.6e}, {hscale:.6e}']
     sets = {'SRC': [], 'DRN': [], 'BLK': [], 'GATE': [], 'OXI': [],
-            'XL': [], 'XR': []}
+            'XL': [], 'XR': [], 'YL': [], 'YR': []}
     for (ix, zlev, iy), aa in nid.items():
         x = xs[ix]
         if zlev == 0 and x <= 0.9 + 1e-9:
@@ -104,6 +105,7 @@ def write_inp(job, hscale, steps, mech_bc):
             sets['XL'].append(aa)
         if ix == len(xs) - 1:
             sets['XR'].append(aa)
+        sets['YL' if iy == 0 else 'YR'].append(aa)
     for nm, ids in sets.items():
         L.append(f'*NSET, NSET={nm}')
         ids = sorted(ids)
@@ -210,8 +212,22 @@ def main():
     i1 = Q*NI*ev[2][1][0][1]
     di = i1/i0 - 1
     di_exact = -P11*EYSI*EPS0                        # dI/I = -pi11*sxx
-    print(f'[압저항] dI/I = {di*100:.2f}%, Smith(1954) 예측 '
+    print(f'[압저항 종] dI/I = {di*100:.2f}%, Smith(1954) pi11 예측 '
           f'{di_exact*100:.2f}% (sxx = {EYSI*EPS0/1e6:.0f} MPa)')
+
+    # ---- 2b. 횡방향 압저항: y-면 변위로 syy = E*eps0, dI/I = -pi12*syy ----
+    pins_t = ['XL, 5, 5, 0.', 'PINA, 7, 7, 0.', 'PINB, 7, 7, 0.',
+              'BLK, 4, 4, 0.']
+    y0 = ['YL, 6, 6, 0.', 'YR, 6, 6, 0.']
+    yc = ['YL, 6, 6, 0.', f'YR, 6, 6, {EPS0*WM*UM:.6e}']
+    steps = [(0., 0., 20, y0), (VG, 0.05, 10, y0), (VG, 0.05, 4, yc)]
+    _, _, _, ev = run_job('ex19pzt', 0.0, steps, pins_t)
+    i0t = Q*NI*ev[1][1][0][1]
+    i2 = Q*NI*ev[2][1][0][1]
+    dit = i2/i0t - 1
+    dit_exact = -P12*EYSI*EPS0                       # dI/I = -pi12*syy
+    print(f'[압저항 횡] dI/I = {dit*100:.2f}%, Smith(1954) pi12 예측 '
+          f'{dit_exact*100:.2f}% (syy = {EYSI*EPS0/1e6:.0f} MPa)')
 
     # ---- 3. full loop: 바닥 고정, HSCALE=200, VD 소인 ----
     clamp = ['BLK, 5, 7, 0.', 'BLK, 4, 4, 0.']
@@ -244,7 +260,9 @@ def main():
     ax0.grid(alpha=0.3)
     ax0.text(0.98, 0.05,
              f'expansion check: {err_exp*100:.2f}% err\n'
-             f'piezo check: {di*100:.1f}% vs {di_exact*100:.1f}% (Smith 1954)',
+             f'piezo $\\pi_{{11}}$: {di*100:.1f}% vs {di_exact*100:.1f}%, '
+             f'$\\pi_{{12}}$: {dit*100:.1f}% vs {dit_exact*100:.1f}% '
+             f'(Smith 1954)',
              transform=ax0.transAxes, ha='right', fontsize=8)
     dh = ev[-1][0]
     y0 = [nid3[(ix, iz, 0)] - 1 for iz in range(len(zs))
@@ -263,7 +281,8 @@ def main():
     print('figure ->', os.path.abspath(out) + '.png')
 
     assert err_exp < 0.02                            # 1. 열팽창 닫힌형
-    assert abs(di - di_exact) < 0.02                 # 2. Smith 1954
+    assert abs(di - di_exact) < 0.02                 # 2. Smith 1954 pi11
+    assert abs(dit - dit_exact) < 0.015              # 2b. Smith 1954 pi12
     assert bal_w < 0.05                              # 3. 에너지 수지
     assert ietm[-1] < ietm[-2]                       # 3. 음의 출력 컨덕턴스
     print('check passed: monolithic 전기-열-기계 UEL — '
