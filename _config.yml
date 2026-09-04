@@ -1,0 +1,5 @@
+theme: jekyll-theme-cayman
+title: "TCAD in Abaqus — Semiconductor Device Simulation with User Elements"
+description: "Drift-diffusion TCAD (pn diode, 3D MOSFET) implemented as Abaqus UEL, verified against Pao-Sah (1966) and Brews (1978). By Gyu-Jang Sim (심규장), Seoul National University."
+plugins:
+  - jekyll-seo-tag
