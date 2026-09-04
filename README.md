@@ -32,6 +32,8 @@ Reproduce with `python mosfet/make_demo.py`.
 | `mosfet/` (electro-thermo-mechanical) | + small-strain **thermoelasticity** (trilinear hex, 2×2×2 Gauss, σ = C:(ε − αΔT·I)) and **piezoresistive** mobility feedback from the element stress (Smith 1954 n-Si coefficients) | **7-dof monolithic** (ψ, φₙ, φₚ, ΔT, uₓ, u_y, u_z) — displacements ride Abaqus dof slots 5–7 (UR2/UR3/WARP) | uniform-ΔT free expansion vs closed form (0.08 %); longitudinal/transverse ±100 MPa vs Smith's π₁₁ and π₁₂ (−10.13 vs −10.22 %, +5.32 vs +5.34 %); energy balance 0.01 %; thermal-stress droop on top of self-heating |
 | `mosfet/run_resistor.py` | uniform n⁺ bar resistor on the same 7-dof element — the element-level answer key | every field has a closed form | R vs L/(q n µ A) (0.30 %); parabolic Joule self-heating profile ΔT_max = PL/8κA (0.02 %, shape ratio 0.7498 vs 0.75); energy balance 0.00 % |
 | `emig/` | metal-line **electromigration** (Korhonen vacancy/stress model): ohmic V + EM stress σ, blocked ends, electron-wind drive, backward-Euler transient | 1D 2-node (V, σ) monolithic UEL | node-wise reproduction of Korhonen's (1993) published finite-line solution across κt/L² = 0.01–0.5 (worst 1.09 %); steady Blech–Herring back-stress Δσ = eZ*ρjL/Ω to 0.00 %; Blech (1976) critical product (jL)_c |
+| `jlfet/` | **density-gradient quantum correction** (Ancona 1987/1989 — Sentaurus's QM model) as a 4th nodal dof σ = ln√(n/nᵢ); hard-wall confinement, DG-generalized SG flux | 4-dof monolithic (ψ, φₙ, φₚ, σ) | node-wise 0.05 % (γ = 3.6) and 0.04 % (γ/10) agreement with an independent 1D Newton reference on a 5 nm slab — dark space, accumulation shoulders, volume redistribution all reproduced |
+| `jlfet/` (device reproduction) | junctionless trigate MuGFET rebuilt from the published inputs of Lee et al., APL 94, 053511 (2009) | classical 3-dof UEL, wrap-gate tensor mesh | 12-decade transfer curve; SS/DIBL vs the paper's Fig. 3 (interim: mesh-convergence study in progress) |
 
 ### MOSFET drain current: 3D UEL vs. the papers
 
@@ -142,6 +144,48 @@ parabolic Joule-heating temperature profile ΔT_max = PL/8κA to 0.02 % (quarter
 shape ratio 0.7498 vs. the exact 0.75), and end-contact heat reactions equal to I·V to
 0.00 %.
 
+## Density-gradient quantum correction
+
+At sub-10 nm channel dimensions, quantum confinement pushes carriers away from the
+Si/SiO₂ interface and raises the ground-state energy — classical drift–diffusion puts
+the density peak right at the wall and gets Vth and gate capacitance wrong.
+`jlfet/uel_jl_dg.f` adds the standard production remedy, the **density-gradient (DG)
+model** (Ancona & Tiersten 1987, Ancona & Iafrate 1989 — the "quantum correction" in
+Sentaurus), as a **4th nodal dof** σ = ln√(n/nᵢ), keeping every unknown a bounded
+voltage-like variable:
+
+- carrier density n = e^{2σ}; the DG potential Λ = 2σ − ψ + φₙ satisfies the box-method
+  discretization of (2b/V_T)∇²√n = Λ√n, with b = γħ²/(12qm*) and γ the usual
+  calibration factor;
+- the electron SG flux generalizes to an effective drift t = Δ(2σ + φₙ) — the identity
+  B(t)eᵗ = B(−t) keeps equilibrium fluxes exactly zero;
+- quantum confinement enters as a hard-wall Dirichlet σ at Si/SiO₂ interfaces.
+
+![Density-gradient quantum confinement in Abaqus: carrier profile in a 5 nm slab matching the independent reference solution node by node](docs/fig_dg.png)
+
+Verification (`python jlfet/run_dg.py`) on a 5 nm slab at 8×10¹⁹ cm⁻³, against an
+independent 1D Newton reference (`reference_dg1d.py`, wall-continuation solver):
+node-wise agreement to **0.05 %** at γ = 3.6 and **0.04 %** at γ/10 — the dark space,
+the near-wall accumulation shoulders (1.31·N_D), and the center redistribution are all
+reproduced at both coupling strengths.
+
+## Reproducing published devices: same input, same output
+
+The `jlfet/` module also starts a device-reproduction pipeline: take a published
+paper's complete input deck, rebuild it in the UEL framework, and compare the published
+outputs. First target: the junctionless trigate MuGFET of Lee, Colinge et al. (APL 94,
+053511, 2009) — 5×5 nm² fin, 2 nm oxide, N_D = 8×10¹⁹ everywhere (no junctions),
+Φ_M = 5.5 eV, classical Atlas 3-D simulation (same model class as this UEL).
+`python jlfet/run_jlfet.py 20` rebuilds the device and produces a clean 12-decade
+transfer curve; the gate work-function reference convention differs between codes, so
+the comparison targets are the shift-invariant SS and DIBL from the paper's Fig. 3
+(digitized in `paper_lee2009.py`). Current status: SS/DIBL run above the published
+values (68 vs ~60 mV/dec, 37 vs ~14 mV at L_g = 20 nm) with the 0.5 nm cross-section
+mesh under-resolving the 0.46 nm Debye length — a mesh-convergence study is in
+progress before these become hard asserts. A second, geometrically richer target
+(3-stacked nanosheet GAA FET vs FinFET, Wang et al., Electronics 12, 770, 2023, full
+parameter table in `paper_wang2023.py`) is queued.
+
 ## Electromigration: Korhonen model UEL
 
 `emig/uel_em.f` applies the same monolithic recipe to interconnect reliability: a 1D
@@ -187,6 +231,10 @@ python run_staggered.py      # ~25 min: monolithic vs staggered-type, 8 jobs
 
 cd emig
 python run_emig.py           # ~1 min: electromigration vs Korhonen/Blech, figure + checks
+
+cd jlfet
+python run_dg.py             # ~2 min: density-gradient quantum slab vs 1D reference
+python run_jlfet.py 20       # ~10 min: Lee (2009) junctionless trigate reproduction
 ```
 
 Each driver generates the mesh/inp, launches Abaqus, parses the `.dat` output, and
@@ -269,6 +317,11 @@ Scharfetter–Gummel box method 이산화, 준페르미 퍼텐셜 변수, 완전
   electromigration in confined metal lines*, J. Appl. Phys. 73 (1993) 3790.
 - I. A. Blech, *Electromigration in thin aluminum films on titanium nitride*,
   J. Appl. Phys. 47 (1976) 1203.
+- M. G. Ancona, H. F. Tiersten, *Macroscopic physics of the silicon inversion layer*,
+  Phys. Rev. B 35 (1987) 7959; M. G. Ancona, G. J. Iafrate, *Quantum correction to the
+  equation of state of an electron gas in a semiconductor*, Phys. Rev. B 39 (1989) 9536.
+- C.-W. Lee, A. Afzalian, N. D. Akhavan, R. Yan, I. Ferain, J.-P. Colinge,
+  *Junctionless multigate field-effect transistor*, Appl. Phys. Lett. 94 (2009) 053511.
 
 ## Author
 

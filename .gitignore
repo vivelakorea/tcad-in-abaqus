@@ -1,5 +1,6 @@
 **/abq_run/*
 !**/abq_run/*.inp
+papers/
 __pycache__/
 *.pyc
 CLAUDE.md
