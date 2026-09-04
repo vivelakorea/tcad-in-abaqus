@@ -29,6 +29,7 @@ Reproduce with `python mosfet/make_demo.py`.
 | `diode/` | 1D pn junction, drift–diffusion (ψ, n, p) | 2-node element, Scharfetter–Gummel (1969) exponential-fitting flux, analytic unsymmetric Jacobian | node-wise 5×10⁻⁸ agreement with an independent Python solver; built-in potential, mass-action law, current conservation |
 | `mosfet/` | 3D long-channel NMOS (6×0.5×2 µm, n⁺ 10¹⁹ S/D, p-substrate 10¹⁷, 10 nm oxide, L = 4 µm) | 8-node hex box-method element with SG fluxes on all 12 edges, quasi-Fermi variables (ψ, φₙ, φₚ) | drain current vs. Pao–Sah (1966) exact double integral and Brews (1978) charge-sheet model |
 | `mosfet/` (electro-thermal) | same NMOS with **self-heating**: lattice temperature as a 4th nodal dof, steady-state heat equation with edge-lumped Joule heating, V_T(T) and µ(T) feedback (a minimal Wachutka 1990 thermodynamic model) | **monolithic** (ψ, φₙ, φₚ, ΔT) Newton — one unsymmetric 4×4-block Jacobian, not the usual staggered TCAD↔thermal loop | energy balance (heatsink reaction heat = ΣI·V, Tellegen) to 0.01 %; isothermal limit reproduces Pao–Sah; I_D–V_D droop with negative output conductance |
+| `mosfet/` (electro-thermo-mechanical) | + small-strain **thermoelasticity** (trilinear hex, 2×2×2 Gauss, σ = C:(ε − αΔT·I)) and **piezoresistive** mobility feedback from the element stress (Smith 1954 n-Si coefficients) | **7-dof monolithic** (ψ, φₙ, φₚ, ΔT, uₓ, u_y, u_z) — displacements ride Abaqus dof slots 5–7 (UR2/UR3/WARP) | uniform-ΔT free expansion vs closed form (0.08 %); uniaxial −100 MPa → ΔI_D/I_D = −10.1 % vs Smith's −π₁₁σ = −10.2 %; energy balance 0.01 %; thermal-stress droop on top of self-heating |
 
 ### MOSFET drain current: 3D UEL vs. the papers
 
@@ -80,6 +81,34 @@ Verification (no closed form exists for the coupled problem):
 
 Reproduce with `python mosfet/run_selfheating.py` (two Abaqus jobs, heating on/off).
 
+## Electro-thermo-mechanical: the full three-field loop
+
+`mosfet/uel_mos_etm.f` extends the element to **seven nodal dofs**
+(ψ, φₙ, φₚ, ΔT, uₓ, u_y, u_z), closing the loop
+*current → Joule heat → temperature → thermal strain → stress → piezoresistance →
+mobility → current* in a single monolithic Newton iteration. Displacements occupy
+Abaqus's remaining structural dof slots (5, 6, 7 = UR2, UR3, warping — a `*STATIC`
+step accepts all of them for user elements). Mechanics is standard small-strain
+thermoelasticity on the same hexahedra (2×2×2 Gauss, consistent K_uu and
+thermal-expansion K_uT blocks); the electron mobility carries a piezoresistance factor
+1 − (π₁₁σₓₓ + π₁₂(σ_yy + σ_zz)) with Smith (1954) n-Si coefficients evaluated from the
+element-center stress.
+
+![Electro-thermo-mechanical MOSFET simulation in Abaqus: 7-dof monolithic user element with self-heating and piezoresistive feedback](docs/fig_etm.png)
+
+Verification (`python mosfet/run_etm.py`, three Abaqus jobs):
+
+| check | result | reference |
+|---|---|---|
+| uniform ΔT = 100 K free expansion (bottom rollers) | u_z(top) error 0.08 % | closed form u_z = −αΔT·H |
+| uniaxial σₓₓ = −100 MPa via face displacement | ΔI_D/I_D = −10.13 % | Smith (1954): −π₁₁σₓₓ = −10.22 % |
+| full loop, bottom clamped, HSCALE = 200 | energy balance ≤ 0.01 %, ΔT_max 118 K | Tellegen, as above |
+| thermal-stress feedback | I_D(3 V) = 13.99 µA < 14.04 µA (thermal-only) | compressive hotspot lowers µₙ — extra droop on top of self-heating |
+
+The piezoresistive coupling enters the residual only (its Jacobian columns are
+omitted — a deliberate quasi-Newton shortcut for a ~3 % effect; the V_D continuation
+ladder carries convergence, and all four checks still pass).
+
 ## How to run
 
 Requires Abaqus (tested with 2024) with a linked Fortran compiler, plus Python 3 with
@@ -92,6 +121,7 @@ python run_diode.py     # ~1 min: writes inp, runs abaqus job=... user=uel_dd.f,
 cd mosfet
 python run_mosfet.py         # ~3 min: full bias sweep in one job (6 steps), figure + checks
 python run_selfheating.py    # ~4 min: electro-thermal, 2 jobs (HSCALE 0/200), figure + checks
+python run_etm.py            # ~6 min: electro-thermo-mechanical, 3 jobs, figure + checks
 ```
 
 Each driver generates the mesh/inp, launches Abaqus, parses the `.dat` output, and
@@ -168,6 +198,8 @@ Scharfetter–Gummel box method 이산화, 준페르미 퍼텐셜 변수, 완전
 - J. R. Brews, *A charge-sheet model of the MOSFET*, Solid-State Electron. 21 (1978) 345.
 - G. K. Wachutka, *Rigorous thermodynamic treatment of heat generation and conduction in
   semiconductor device modeling*, IEEE Trans. CAD 9 (1990) 1141.
+- C. S. Smith, *Piezoresistance effect in germanium and silicon*, Phys. Rev. 94
+  (1954) 42.
 
 ## Author
 
