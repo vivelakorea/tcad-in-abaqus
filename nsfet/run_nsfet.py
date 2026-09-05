@@ -293,8 +293,8 @@ def figure(cur, met, ioffs, vg0_ideal):
     RM = _regmap(XC, YC, ZC)
     filled = RM > 0
     col = np.zeros(RM.shape + (4,))
-    col[RM == 1] = (0.55, 0.55, 0.55, 0.22)  # 금속 (반투명)
-    col[RM == 2] = (0.62, 0.79, 0.88, 0.35)  # 산화막
+    col[RM == 1] = (0.42, 0.42, 0.45, 0.60)  # 금속 (약반투명 진회색)
+    col[RM == 2] = (0.62, 0.79, 0.88, 0.45)  # 산화막
     col[RM == 3] = (0.42, 0.72, 0.40, 1.0)   # 채널
     col[RM == 4] = (0.76, 0.22, 0.17, 1.0)   # S/D 에피
     X3, Y3, Z3 = np.meshgrid(xe, ye, -ze, indexing='ij')
@@ -304,7 +304,7 @@ def figure(cur, met, ioffs, vg0_ideal):
     ax3.set_ylabel('y [nm]')
     ax3.set_zlabel('-z [nm]')
     ax3.set_title('3-stacked NS GAAFET (cutaway at y=0)')
-    ax3.view_init(18, -55)
+    ax3.view_init(16, -78)
     # (a) x-z 단면 (y=0, 시트 중앙): 적층 시트 + S/D 에피 + 게이트/스페이서
     ax = fig.add_subplot(gs[0, 1])
     x = np.linspace(0, XT, 241)
