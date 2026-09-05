@@ -240,6 +240,7 @@ def compare():
               f'    {ioffs[l]:.3e}   {ioffs[l]/ioffs[0]:6.1f}x')
     r5 = ioffs[5]/ioffs[0]
     ss = [met[l][2] for l in (0, 3, 5)]
+    figure(cur, met, ioffs, vg0_ideal)
     # 논문 명시: Lrcs=5 에서 Ioff 10배 이상, SS/on-off 열화, Ion 증가
     assert r5 > 10.0, f'Ioff(5nm)/Ioff(0) = {r5:.1f}'
     assert ss[0] < ss[1] < ss[2]
@@ -247,6 +248,99 @@ def compare():
     print(f'check passed: Wang et al. (2023) 명시 결과 재현 — '
           f'Ioff(Lrcs=5) = {r5:.1f}x (>10x), SS 열화 {ss[0]:.1f}->{ss[2]:.1f}.'
           f' (Ion 절대값은 vsat/ballistic 미구현으로 비교 제외)')
+
+
+def _regmap(xx, yy, zz, lrcs=0.0):
+    """가시화용: 거울 대칭 펼친 좌표 -> 0빈/1금속/2산화막/3채널/4 n+."""
+    code = {'EOX': 2, 'NCH': 3, 'NSD': 4}
+    zm = TNS + TSP + TNS/2                   # z 거울면 21
+    out = np.zeros(np.broadcast(xx, yy, zz).shape)
+    it = np.nditer([xx, yy, zz, out],
+                   op_flags=[['readonly']]*3 + [['writeonly']])
+    for x, y, z, o in it:
+        ze = float(z) if z <= zm else 2*zm - float(z)
+        r = region(float(x), abs(float(y)), ze, lrcs)
+        if r is not None:
+            o[...] = code[r]
+        else:
+            dx = min(float(x), XT - float(x))
+            ingate = dx >= LSD + LSP
+            inbox = (abs(float(y)) < WNS2 + EOT + 1e-6
+                     and -EOT - 1e-6 < ze)
+            o[...] = 1 if (ingate and inbox) else 0
+    return out
+
+
+def figure(cur, met, ioffs, vg0_ideal):
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+    from matplotlib.colors import ListedColormap
+    cmap = ListedColormap(['white', '#909090', '#9ecae1',
+                           '#a1d99b', '#c1392b'])
+    fig = plt.figure(figsize=(11.5, 7.2))
+    # (a) x-z 단면 (y=0, 시트 중앙): 적층 시트 + S/D 에피 + 게이트/스페이서
+    ax = fig.add_subplot(2, 2, 1)
+    x = np.linspace(0, XT, 241)
+    z = np.linspace(-EOT, 2*(TNS+TSP+TNS/2)+EOT, 221)
+    X, Z = np.meshgrid(x, z)
+    ax.pcolormesh(X, -Z, _regmap(X, np.zeros_like(X), Z), cmap=cmap,
+                  vmin=0, vmax=4, shading='nearest')
+    ax.set_title('cut A-A (y=0): 3-stacked nanosheets')
+    ax.set_xlabel('x [nm] (source $\\to$ drain)')
+    ax.set_ylabel('-z [nm]')
+    # (b) y-z 단면 (게이트 중앙): gate-all-around 랩
+    ax = fig.add_subplot(2, 2, 2)
+    y = np.linspace(-(WNS2+EOT), WNS2+EOT, 241)
+    Y, Z2 = np.meshgrid(y, z)
+    ax.pcolormesh(Y, -Z2, _regmap(np.full_like(Y, X0), Y, Z2), cmap=cmap,
+                  vmin=0, vmax=4, shading='nearest')
+    ax.set_title('cut B-B (gate center): gate-all-around')
+    ax.set_xlabel('y [nm]')
+    ax.set_ylabel('-z [nm]')
+    for lab, c in (('metal gate', '#909090'), ('oxide', '#9ecae1'),
+                   ('channel 10$^{15}$', '#a1d99b'),
+                   ('S/D 2$\\times$10$^{20}$', '#c1392b')):
+        ax.plot([], [], 's', color=c, label=lab)
+    ax.legend(fontsize=7, loc='center')
+    # (c) 전달특성 (WF = 이상 소자 정렬로 고정)
+    ax = fig.add_subplot(2, 2, 3)
+    for l, c in ((0, 'tab:blue'), (3, 'tab:orange'), (5, 'crimson')):
+        ax.semilogy(np.array(VGS) - vg0_ideal, cur[l], 'o-', ms=3,
+                    color=c, label=f'$L_{{rcs}}$ = {l} nm')
+    ax.axvline(0, color='k', lw=0.7, ls=':')
+    ax.axhline(IOFF_LP, color='k', lw=0.7, ls=':')
+    ax.annotate(f'$I_{{off}}$ @ fixed WF:\n1.0x / {ioffs[3]/ioffs[0]:.1f}x /'
+                f' {ioffs[5]/ioffs[0]:.1f}x\n(paper: >10x at 5 nm)',
+                xy=(0, ioffs[5]), xytext=(0.25, 1e-14), fontsize=8,
+                arrowprops=dict(arrowstyle='->', lw=0.8))
+    ax.set_xlabel("$V_G'$ [V] (LP-aligned)")
+    ax.set_ylabel('$I_D$ [A]')
+    ax.set_title(f'transfer @ $V_{{DS}}$ = {VDD} V')
+    ax.legend(fontsize=8)
+    ax.grid(alpha=0.3, which='both')
+    # (d) SS 열화
+    ax = fig.add_subplot(2, 2, 4)
+    ls = [0, 3, 5]
+    ax.bar([str(v) for v in ls], [met[v][2] for v in ls],
+           color=['tab:blue', 'tab:orange', 'crimson'], width=0.5)
+    ax.axhline(64.0, color='k', ls='--', lw=1,
+               label='paper calibration baseline ~64')
+    for i, v in enumerate(ls):
+        ax.text(i, met[v][2] + 0.3, f'{met[v][2]:.1f}', ha='center',
+                fontsize=9)
+    ax.set_ylim(55, 75)
+    ax.set_xlabel('$L_{rcs}$ [nm]')
+    ax.set_ylabel('SS [mV/dec]')
+    ax.set_title('subthreshold swing degradation')
+    ax.legend(fontsize=8)
+    fig.suptitle('Stacked-nanosheet GAAFET rebuilt from Wang et al., '
+                 'Electronics 12, 770 (2023), Table 1', y=0.99)
+    fig.tight_layout()
+    out = os.path.join(HERE, '..', 'docs', 'fig_nsfet')
+    fig.savefig(out + '.png', dpi=150)
+    fig.savefig(out + '.pdf')
+    print('figure ->', os.path.abspath(out) + '.png')
 
 
 def main():
