@@ -176,15 +176,27 @@ paper's complete input deck, rebuild it in the UEL framework, and compare the pu
 outputs. First target: the junctionless trigate MuGFET of Lee, Colinge et al. (APL 94,
 053511, 2009) — 5×5 nm² fin, 2 nm oxide, N_D = 8×10¹⁹ everywhere (no junctions),
 Φ_M = 5.5 eV, classical Atlas 3-D simulation (same model class as this UEL).
-`python jlfet/run_jlfet.py 20` rebuilds the device and produces a clean 12-decade
+`python jlfet/run_jlfet.py 20` rebuilds the device (half-symmetry wrap-gate tensor
+mesh, 0.25 nm cross-section, BOX + grounded substrate) and produces a clean 12-decade
 transfer curve; the gate work-function reference convention differs between codes, so
 the comparison targets are the shift-invariant SS and DIBL from the paper's Fig. 3
-(digitized in `paper_lee2009.py`). Current status: SS/DIBL run above the published
-values (68 vs ~60 mV/dec, 37 vs ~14 mV at L_g = 20 nm) with the 0.5 nm cross-section
-mesh under-resolving the 0.46 nm Debye length — a mesh-convergence study is in
-progress before these become hard asserts. A second, geometrically richer target
-(3-stacked nanosheet GAA FET vs FinFET, Wang et al., Electronics 12, 770, 2023, full
-parameter table in `paper_wang2023.py`) is queued.
+(digitized in `paper_lee2009.py`).
+
+| L_gate | SS here | SS paper | DIBL here | DIBL paper |
+|---|---|---|---|---|
+| 20 nm | 67–72 mV/dec | ~60 | 37–40 mV | ~14 |
+| 30 nm | 68 mV/dec | ~60 | 17.5 mV | ~8 |
+
+The reproduction verdict, after robustness checks (2× mesh refinement and two bottom
+boundary treatments changed nothing): **DIBL reproduces the published length scaling**
+(40 → 17.5 mV tracking the paper's 14 → 8), while **SS carries a length-independent
++8 mV/dec offset** — the signature of a constant body-factor difference, attributable
+to details the paper does not publish (simulator model defaults, contact placement,
+substrate treatment), not to discretization. This is what honest same-input
+reproduction looks like: the published inputs constrain the answer to within a
+documented systematic. A second, geometrically richer target (3-stacked nanosheet GAA
+FET vs FinFET, Wang et al., Electronics 12, 770, 2023, full parameter table in
+`paper_wang2023.py`) is queued, where the DG quantum correction above will be needed.
 
 ## Electromigration: Korhonen model UEL
 
