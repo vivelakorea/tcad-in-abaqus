@@ -29,7 +29,7 @@ import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 RUN = os.path.join(HERE, 'abq_run')
-UELF = os.path.join(HERE, '..', 'jlfet', 'uel_jl.f')
+UELF = os.path.join(HERE, 'uel_ns.f')       # jlfet/uel_jl.f + UVARM 브리지
 Q, VT, NI = 1.602e-19, 0.02585, 1.0e10
 NM = 1e-7
 LG, LSP, LSD = 18.0, 5.0, 10.0               # nm
@@ -135,6 +135,18 @@ def write_inp(job, lrcs):
     L += ['*UEL PROPERTY, ELSET=ENSD', f'1, {NSD:.6e}',
           '*UEL PROPERTY, ELSET=ENCH', f'1, {NCH:.6e}',
           '*UEL PROPERTY, ELSET=EOX', '0, 0.']
+    # ODB 가시화용 더미 오버레이: 같은 연결성의 C3D8 을 초저강성으로 겹침
+    # -> Viewer 에 메쉬가 렌더되고 U1/U2/U3 = psi/phi_n/phi_p [VT] 컨투어.
+    # 재료별 elset (VNSD/VNCH/VOX) 이라 색상 구분도 가능.
+    for key in ('ENSD', 'ENCH', 'EOX'):
+        if conn[key]:
+            L.append(f'*ELEMENT, TYPE=C3D8, ELSET=V{key[1:]}')
+            L += [f'{int(c.split(",")[0]) + 500000},'
+                  + c.split(',', 1)[1] for c in conn[key]]
+    L += ['*ELSET, ELSET=EVIS', 'VNSD, VNCH, VOX',
+          '*MATERIAL, NAME=MDUM', '*ELASTIC', '1e-20, 0.',
+          '*USER OUTPUT VARIABLES', '2',     # UVARM1/2 = log10 n / log10 p
+          '*SOLID SECTION, ELSET=EVIS, MATERIAL=MDUM']
     e0, e1 = X0 - LG/2, X0 + LG/2
     sets = {'SRC': [], 'DRN': [], 'GATE': [], 'OXI': []}
     for (ix, iy, iz), v in nid.items():
@@ -169,7 +181,10 @@ def write_inp(job, lrcs):
              f'GATE, 1, 1, {vg/VT:.8e}',
              'OXI, 2, 3, 0.']
         if prt:
-            s += ['*NODE PRINT, NSET=DRN, FREQUENCY=999, TOTALS=YES', 'RF']
+            s += ['*NODE PRINT, NSET=DRN, FREQUENCY=999, TOTALS=YES', 'RF',
+                  '*OUTPUT, FIELD, FREQUENCY=999',      # ODB: 스텝 말 필드
+                  '*NODE OUTPUT', 'U',
+                  '*ELEMENT OUTPUT, ELSET=EVIS', 'UVARM']
         s.append('*END STEP')
         return s
 
@@ -178,7 +193,7 @@ def write_inp(job, lrcs):
     for vg in VGS[1:]:
         L += bstep(vg, VDD, 4, False)
     io.open(os.path.join(RUN, job + '.inp'), 'w').write('\n'.join(L) + '\n')
-    return a[0]
+    return a[0], nid, xs, ys, zs
 
 
 def parse_rf(job):
@@ -200,7 +215,7 @@ def run_job(job, lrcs):
     if os.path.exists(dat):
         print(f'> {job}: cached')
     else:
-        nn = write_inp(job, lrcs)
+        nn = write_inp(job, lrcs)[0]
         print(f'> {job}: Lrcs={lrcs}nm, {nn} nodes')
         lck = os.path.join(RUN, job + '.lck')
         if os.path.exists(lck):
