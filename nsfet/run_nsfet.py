@@ -123,7 +123,8 @@ def write_inp(job, lrcs):
                 conn[key].append(f'{e}, ' + ', '.join(map(str, nn)))
                 if key != 'EOX':
                     touch_si.update(nn)
-    lines = [f'{v}, {xs[ix]*NM:.8e}, {ys[iy]*NM:.8e}, {zs[iz]*NM:.8e}'
+    # 좌표는 nm 단위로 기록 (uel_ns.f 가 x1e-7 로 cm 환산; Viewer 줌 바닥 회피)
+    lines = [f'{v}, {xs[ix]:.5f}, {ys[iy]:.5f}, {zs[iz]:.5f}'
              for (ix, iy, iz), v in sorted(nid.items(), key=lambda kv: kv[1])]
     L = ['*HEADING', f'ex25 stacked-NS GAAFET (Wang 2023) Lrcs={lrcs}nm',
          '*USER ELEMENT, NODES=8, TYPE=U1, PROPERTIES=2, COORDINATES=3,'

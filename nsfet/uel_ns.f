@@ -32,9 +32,11 @@ C
         IF (SCALE .GT. 1.D0) SCALE = 1.D0
         DOP = DOP*SCALE
       END IF
-      DX = DABS(COORDS(1,2) - COORDS(1,1))
-      DY = DABS(COORDS(2,4) - COORDS(2,1))
-      DZ = DABS(COORDS(3,5) - COORDS(3,1))
+C     inp 좌표는 nm (Viewer 최소 줌 폭 ~1.6e-4 가 cm-단위 nm 소자를
+C     점으로 만듦) -> 물리 계산은 x1e-7 로 cm 환산
+      DX = DABS(COORDS(1,2) - COORDS(1,1))*1.0D-7
+      DY = DABS(COORDS(2,4) - COORDS(2,1))*1.0D-7
+      DZ = DABS(COORDS(3,5) - COORDS(3,1))*1.0D-7
       VOL8 = DX*DY*DZ/8.D0
       EPS = EPOX
       IF (ISI .EQ. 1) EPS = EPSI
