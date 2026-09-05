@@ -278,9 +278,35 @@ def figure(cur, met, ioffs, vg0_ideal):
     from matplotlib.colors import ListedColormap
     cmap = ListedColormap(['white', '#909090', '#9ecae1',
                            '#a1d99b', '#c1392b'])
-    fig = plt.figure(figsize=(11.5, 7.2))
+    fig = plt.figure(figsize=(14.5, 7.6))
+    gs = fig.add_gridspec(2, 3, width_ratios=[1.35, 1, 1])
+    # (0) 3D 전체 구조: 1nm 복셀, y=0 컷어웨이 + 반투명 게이트 금속
+    ax3 = fig.add_subplot(gs[:, 0], projection='3d')
+    zm2 = 2*(TNS + TSP + TNS/2)              # 42
+    xe = np.arange(0., XT + 0.5, 1.0)
+    ye = np.arange(0., WNS2 + EOT + 0.5, 1.0)    # 컷어웨이: y >= 0 만
+    ze = np.arange(-EOT, zm2 + EOT + 0.5, 1.0)
+    xc = 0.5*(xe[:-1] + xe[1:])
+    yc = 0.5*(ye[:-1] + ye[1:])
+    zc = 0.5*(ze[:-1] + ze[1:])
+    XC, YC, ZC = np.meshgrid(xc, yc, zc, indexing='ij')
+    RM = _regmap(XC, YC, ZC)
+    filled = RM > 0
+    col = np.zeros(RM.shape + (4,))
+    col[RM == 1] = (0.55, 0.55, 0.55, 0.22)  # 금속 (반투명)
+    col[RM == 2] = (0.62, 0.79, 0.88, 0.35)  # 산화막
+    col[RM == 3] = (0.42, 0.72, 0.40, 1.0)   # 채널
+    col[RM == 4] = (0.76, 0.22, 0.17, 1.0)   # S/D 에피
+    X3, Y3, Z3 = np.meshgrid(xe, ye, -ze, indexing='ij')
+    ax3.voxels(X3, Y3, Z3, filled, facecolors=col, edgecolor=None)
+    ax3.set_box_aspect((XT, 2*(WNS2+EOT), zm2 + 2*EOT))
+    ax3.set_xlabel('x [nm]')
+    ax3.set_ylabel('y [nm]')
+    ax3.set_zlabel('-z [nm]')
+    ax3.set_title('3-stacked NS GAAFET (cutaway at y=0)')
+    ax3.view_init(18, -55)
     # (a) x-z 단면 (y=0, 시트 중앙): 적층 시트 + S/D 에피 + 게이트/스페이서
-    ax = fig.add_subplot(2, 2, 1)
+    ax = fig.add_subplot(gs[0, 1])
     x = np.linspace(0, XT, 241)
     z = np.linspace(-EOT, 2*(TNS+TSP+TNS/2)+EOT, 221)
     X, Z = np.meshgrid(x, z)
@@ -290,7 +316,7 @@ def figure(cur, met, ioffs, vg0_ideal):
     ax.set_xlabel('x [nm] (source $\\to$ drain)')
     ax.set_ylabel('-z [nm]')
     # (b) y-z 단면 (게이트 중앙): gate-all-around 랩
-    ax = fig.add_subplot(2, 2, 2)
+    ax = fig.add_subplot(gs[0, 2])
     y = np.linspace(-(WNS2+EOT), WNS2+EOT, 241)
     Y, Z2 = np.meshgrid(y, z)
     ax.pcolormesh(Y, -Z2, _regmap(np.full_like(Y, X0), Y, Z2), cmap=cmap,
@@ -304,7 +330,7 @@ def figure(cur, met, ioffs, vg0_ideal):
         ax.plot([], [], 's', color=c, label=lab)
     ax.legend(fontsize=7, loc='center')
     # (c) 전달특성 (WF = 이상 소자 정렬로 고정)
-    ax = fig.add_subplot(2, 2, 3)
+    ax = fig.add_subplot(gs[1, 1])
     for l, c in ((0, 'tab:blue'), (3, 'tab:orange'), (5, 'crimson')):
         ax.semilogy(np.array(VGS) - vg0_ideal, cur[l], 'o-', ms=3,
                     color=c, label=f'$L_{{rcs}}$ = {l} nm')
@@ -320,7 +346,7 @@ def figure(cur, met, ioffs, vg0_ideal):
     ax.legend(fontsize=8)
     ax.grid(alpha=0.3, which='both')
     # (d) SS 열화
-    ax = fig.add_subplot(2, 2, 4)
+    ax = fig.add_subplot(gs[1, 2])
     ls = [0, 3, 5]
     ax.bar([str(v) for v in ls], [met[v][2] for v in ls],
            color=['tab:blue', 'tab:orange', 'crimson'], width=0.5)
